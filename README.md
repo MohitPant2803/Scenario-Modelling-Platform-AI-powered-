@@ -23,3 +23,36 @@ Monorepo scaffold for a React + Express + MongoDB (Mongoose) scenario analysis a
 7. Run apps:
    - Backend: `npm run dev:backend`
    - Frontend: `npm run dev:frontend`
+
+## Deployment
+
+### Backend on Render
+
+This repo includes a root [render.yaml](./render.yaml) blueprint for the backend service.
+
+1. Push the repo to GitHub.
+2. In Render, create a new Blueprint instance from the repo, or create a Web Service manually with:
+   - Root directory: `backend`
+   - Build command: `npm install && npm run build`
+   - Start command: `npm run start`
+3. Set these environment variables in Render:
+   - `NODE_ENV=production`
+   - `FRONTEND_ORIGIN=https://<your-vercel-domain>`
+   - `SESSION_SECRET=<strong-random-secret>`
+   - `MONGODB_URI=<your-mongodb-connection-string>`
+   - `HF_TOKEN=<your-hugging-face-token>`
+   - `HF_TEXT_MODEL` and `HF_VISION_MODEL` if you want overrides
+4. After deploy, note the Render backend URL, for example `https://your-api.onrender.com`.
+
+### Frontend on Vercel
+
+This repo includes a root [vercel.json](./vercel.json) config that builds the Vite app from `frontend/`.
+
+1. Import the repo into Vercel.
+2. Set the environment variable:
+   - `VITE_API_BASE=https://<your-render-backend-url>`
+3. Deploy.
+
+### Important production note
+
+The backend uses cross-site session cookies between Vercel and Render. In production it now automatically uses `SameSite=None` and `Secure`, so `FRONTEND_ORIGIN` must exactly match your deployed Vercel origin.

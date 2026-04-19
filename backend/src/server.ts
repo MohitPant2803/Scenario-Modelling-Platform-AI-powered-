@@ -12,10 +12,14 @@ import { connectDb } from "./lib/db.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const isProduction = process.env.NODE_ENV === "production";
+const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+
+app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
+    origin: frontendOrigin,
     credentials: true
   })
 );
@@ -28,8 +32,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: "lax",
-      secure: false,
+      sameSite: isProduction ? "none" : "lax",
+      secure: isProduction,
       maxAge: 1000 * 60 * 60 * 24 * 7
     }
   })

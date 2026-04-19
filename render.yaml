@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: scenario-analysis-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_TEXT_MODEL
+        sync: false
+      - key: HF_VISION_MODEL
+        sync: false
