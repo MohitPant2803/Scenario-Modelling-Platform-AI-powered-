@@ -26,36 +26,48 @@ Monorepo scaffold for a React + Express + MongoDB (Mongoose) scenario analysis a
 
 ## Deployment
 
-### Backend on Render
+### Backend on Vercel
 
-This repo includes a root [render.yaml](./render.yaml) blueprint for the backend service.
+The backend is configured as an Express app wrapped by a Vercel function entry at [backend/api/index.ts](./backend/api/index.ts) with Vercel config in [backend/vercel.json](./backend/vercel.json).
 
-1. Push the repo to GitHub.
-2. In Render, create a new Blueprint instance from the repo, or create a Web Service manually with:
-   - Root directory: `backend`
-   - Build command: `npm install && npm run build`
-   - Start command: `npm run start`
-3. Set these environment variables in Render:
-   - `NODE_ENV=production`
-   - `FRONTEND_ORIGIN=https://<your-vercel-domain>`
-     - `SESSION_SECRET=<strong-random-secret>`
-     - `MONGODB_URI=<your-mongodb-connection-string>`
-     - `HF_TOKEN=<your-hugging-face-token>`
-     - `HF_TEXT_MODEL` and `HF_VISION_MODEL` if you want overrides
-4. After deploy, note the Render backend URL, for example `https://your-api.onrender.com`.
+Create a separate Vercel project for the backend with:
+
+- Root directory: `backend`
+- Framework preset: `Other`
+- Install command: `npm install`
+- Build command: `npm run build`
+
+Set these environment variables:
+
+- `NODE_ENV=production`
+- `SESSION_SECRET=<strong-random-secret>`
+- `MONGODB_URI=<your-mongodb-connection-string>`
+- `FRONTEND_ORIGIN=https://<your-frontend-vercel-domain>`
+- `HF_TOKEN=<your-hugging-face-token>`
+- Optional: `HF_TEXT_MODEL`, `HF_VISION_MODEL`
+
+After deployment, verify:
+
+- `https://<your-backend-domain>/health`
 
 ### Frontend on Vercel
 
-This repo includes a root [vercel.json](./vercel.json) config that builds the Vite app from `frontend/`.
+The frontend is configured as a separate Vite project with config in [frontend/vercel.json](./frontend/vercel.json).
 
-1. Import the repo into Vercel.
-2. Set the environment variable:
-   - `VITE_API_BASE=https://<your-render-backend-url>`
-3. Deploy.
+Create another Vercel project for the frontend with:
+
+- Root directory: `frontend`
+- Framework preset: `Vite`
+
+Set this environment variable:
+
+- `VITE_API_BASE=https://<your-backend-vercel-domain>`
+
+Then redeploy the frontend.
 
 ### Important production note
 
-The backend uses cross-site session cookies between Vercel and Render. In production it now automatically uses `SameSite=None` and `Secure`, so `FRONTEND_ORIGIN` must exactly match your deployed Vercel origin.
+The backend uses cross-site session cookies between the frontend Vercel project and the backend Vercel project. In production it automatically uses `SameSite=None` and `Secure`, so `FRONTEND_ORIGIN` must exactly match your deployed frontend origin.
 
 If you use multiple frontend domains, you can provide a comma-separated `FRONTEND_ORIGIN` value such as:
 
