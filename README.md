@@ -38,10 +38,10 @@ This repo includes a root [render.yaml](./render.yaml) blueprint for the backend
 3. Set these environment variables in Render:
    - `NODE_ENV=production`
    - `FRONTEND_ORIGIN=https://<your-vercel-domain>`
-   - `SESSION_SECRET=<strong-random-secret>`
-   - `MONGODB_URI=<your-mongodb-connection-string>`
-   - `HF_TOKEN=<your-hugging-face-token>`
-   - `HF_TEXT_MODEL` and `HF_VISION_MODEL` if you want overrides
+     - `SESSION_SECRET=<strong-random-secret>`
+     - `MONGODB_URI=<your-mongodb-connection-string>`
+     - `HF_TOKEN=<your-hugging-face-token>`
+     - `HF_TEXT_MODEL` and `HF_VISION_MODEL` if you want overrides
 4. After deploy, note the Render backend URL, for example `https://your-api.onrender.com`.
 
 ### Frontend on Vercel
@@ -56,3 +56,7 @@ This repo includes a root [vercel.json](./vercel.json) config that builds the Vi
 ### Important production note
 
 The backend uses cross-site session cookies between Vercel and Render. In production it now automatically uses `SameSite=None` and `Secure`, so `FRONTEND_ORIGIN` must exactly match your deployed Vercel origin.
+
+If you use multiple frontend domains, you can provide a comma-separated `FRONTEND_ORIGIN` value such as:
+
+`https://your-app.vercel.app,https://your-custom-domain.com`

@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import session from "express-session";
+import MongoStore from "connect-mongo";
 import authRouter from "./routes/auth.js";
 import foldersRouter from "./routes/folders.js";
 import projectsRouter from "./routes/projects.js";
@@ -13,13 +14,22 @@ import { connectDb } from "./lib/db.js";
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const isProduction = process.env.NODE_ENV === "production";
-const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: frontendOrigin,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("CORS origin not allowed"));
+    },
     credentials: true
   })
 );
@@ -28,6 +38,10 @@ app.use(cookieParser());
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "dev-secret",
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI,
+      ttl: 60 * 60 * 24 * 7
+    }),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -51,8 +65,8 @@ app.use("/ai", aiRouter);
 
 connectDb()
   .then(() => {
-    app.listen(port, () => {
-      console.log(`API server listening on http://localhost:${port}`);
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`API server listening on port ${port}`);
     });
   })
   .catch((error) => {
