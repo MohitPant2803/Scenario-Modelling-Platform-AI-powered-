@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { z } from "zod";
+import { canManageProject, canReadProject, getCurrentUser } from "../lib/access.js";
 import { ProjectModel, ScenarioModel } from "../lib/models.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -26,6 +27,12 @@ const scenarioSchema = z.object({
 
 scenariosRouter.get("/project/:projectId", async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+  const currentUser = await getCurrentUser(req);
+  const project = await ProjectModel.findById(req.params.projectId).select({ creatorId: 1, status: 1 }).lean();
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  if (!canReadProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
+
   const scenarios = await ScenarioModel.find({ projectId: req.params.projectId }).sort({ createdAt: 1 });
   res.json(scenarios);
 });
@@ -35,9 +42,13 @@ scenariosRouter.post("/project/:projectId", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   if (!mongoose.isValidObjectId(req.params.projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const project = await ProjectModel.findById(req.params.projectId);
   if (!project) return res.status(404).json({ error: "Project not found" });
-  if (project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   if (parsed.data.parentFolderId && !mongoose.isValidObjectId(parsed.data.parentFolderId)) {
     return res.status(400).json({ error: "Invalid parent folder id" });
@@ -56,10 +67,14 @@ scenariosRouter.patch("/:id", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid scenario id" });
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const scenario = await ScenarioModel.findById(req.params.id);
   if (!scenario) return res.status(404).json({ error: "Scenario not found" });
   const project = await ProjectModel.findById(scenario.projectId);
-  if (!project || project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!project || !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   if (parsed.data.parentFolderId !== undefined && parsed.data.parentFolderId !== null && !mongoose.isValidObjectId(parsed.data.parentFolderId)) {
     return res.status(400).json({ error: "Invalid parent folder id" });
@@ -71,10 +86,14 @@ scenariosRouter.patch("/:id", requireAuth, async (req, res) => {
 
 scenariosRouter.delete("/:id", requireAuth, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid scenario id" });
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const scenario = await ScenarioModel.findById(req.params.id);
   if (!scenario) return res.status(404).json({ error: "Scenario not found" });
   const project = await ProjectModel.findById(scenario.projectId);
-  if (!project || project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!project || !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   await ScenarioModel.findByIdAndDelete(req.params.id);
   res.json({ ok: true });

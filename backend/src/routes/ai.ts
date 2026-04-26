@@ -1,5 +1,6 @@
 import { Router } from "express";
 import mongoose from "mongoose";
+import { canManageProject, canReadProject, getCurrentUser } from "../lib/access.js";
 import { ChatMessageModel, ProjectModel, ScenarioModel } from "../lib/models.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
@@ -473,9 +474,11 @@ function getAiErrorMessage(error: unknown) {
 
 aiRouter.post("/projects/:id/summarize", requireAuth, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid project id" });
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
   const project = await ProjectModel.findById(req.params.id);
   if (!project) return res.status(404).json({ error: "Project not found" });
-  if (project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   if (!hfToken) {
     return res.json({
@@ -522,10 +525,12 @@ Scenarios (nested): ${JSON.stringify(scenarioBlocks)}`
 
 aiRouter.post("/scenarios/:id/summarize", async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid scenario id" });
+  const currentUser = await getCurrentUser(req);
   const scenario = await ScenarioModel.findById(req.params.id);
   if (!scenario) return res.status(404).json({ error: "Scenario not found" });
 
   const project = await ProjectModel.findById(scenario.projectId);
+  if (project && !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   if (!hfToken) {
     return res.json({
@@ -571,9 +576,12 @@ ${scenarioContext.text}`
 
 aiRouter.post("/scenarios/:id/summary-more", async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid scenario id" });
+  const currentUser = await getCurrentUser(req);
   const scenario = await ScenarioModel.findById(req.params.id);
   if (!scenario) return res.status(404).json({ error: "Scenario not found" });
 
+  const projectAccess = await ProjectModel.findById(scenario.projectId).select({ creatorId: 1, status: 1 }).lean();
+  if (projectAccess && !canReadProject(projectAccess, currentUser)) return res.status(403).json({ error: "Forbidden" });
   const project = await ProjectModel.findById(scenario.projectId);
   const currentSummary = String(req.body?.currentSummary || "").trim();
   const rounds = Number.isFinite(Number(req.body?.rounds)) ? Number(req.body?.rounds) : 0;
@@ -626,10 +634,13 @@ aiRouter.post("/scenarios/:id/chat", async (req, res) => {
   if (!question) return res.status(400).json({ error: "question is required" });
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid scenario id" });
 
+  const currentUser = await getCurrentUser(req);
   const scenario = await ScenarioModel.findById(req.params.id);
   if (!scenario) return res.status(404).json({ error: "Scenario not found" });
   const messages = await ChatMessageModel.find({ scenarioId: scenario._id }).sort({ createdAt: -1 }).limit(8);
 
+  const projectAccess = await ProjectModel.findById(scenario.projectId).select({ creatorId: 1, status: 1 }).lean();
+  if (projectAccess && !canReadProject(projectAccess, currentUser)) return res.status(403).json({ error: "Forbidden" });
   const project = await ProjectModel.findById(scenario.projectId);
   const projectContext = project
     ? `Parent project title: ${project.title}. Description: ${project.description || ""}. Formulas/notes: ${project.formulasAndInfo || ""}.`

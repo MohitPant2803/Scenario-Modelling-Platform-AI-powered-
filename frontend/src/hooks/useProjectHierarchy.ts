@@ -49,6 +49,7 @@ type ProjectResponse = {
   graphEnabled?: boolean;
   graphPngDataUrl?: string;
   aiSummary?: string;
+  status?: "draft" | "published";
   creator?: { name?: string };
 };
 

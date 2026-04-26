@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import Button from "../components/common/Button";
 import { api } from "../lib/api";
-
-export type AuthUser = { id: string; name: string; email: string };
+import type { AuthUser } from "../types";
 
 export default function AuthLayout() {
   const location = useLocation();
@@ -40,12 +39,26 @@ export default function AuthLayout() {
             <span style={{ color: "#6b7280" }}>...</span>
           ) : user ? (
             <>
-              <Link to="/my-projects" className="topbar-action topbar-action-secondary">
-                My projects
-              </Link>
+              {user.role === "super_admin" ? (
+                <Link to="/access-control" className="topbar-action topbar-action-primary">
+                  Access
+                </Link>
+              ) : (
+                <>
+                  <Link to="/my-projects" className="topbar-action topbar-action-secondary">
+                    My projects
+                  </Link>
+                  {user.role === "admin" ? (
+                    <Link to="/access-control" className="topbar-action topbar-action-secondary">
+                      Creators
+                    </Link>
+                  ) : null}
+                </>
+              )}
               <span className="topbar-user-chip">
                 <span className="topbar-user-label">Signed in as</span>
                 <strong>{user.name}</strong>
+                <span style={{ fontSize: 12, color: "#475569" }}>{user.role}</span>
               </span>
               <Button type="button" variant="ghost" className="topbar-logout-button" onClick={() => void logout()}>
                 Log out

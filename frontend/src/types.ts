@@ -17,11 +17,14 @@ export type ScenarioChartConfig = {
 };
 
 export type ScenarioChartSource = "excel" | "image";
+export type UserRole = "super_admin" | "admin" | "creator";
+export type ProjectStatus = "draft" | "published";
 
 export type AuthUser = {
   id: string;
   name: string;
   email: string;
+  role: UserRole;
 };
 
 export type ProjectDto = {
@@ -34,6 +37,7 @@ export type ProjectDto = {
   graphEnabled: boolean;
   graphPngDataUrl: string;
   summary: string;
+  status: ProjectStatus;
   ownerName?: string;
 };
 
@@ -95,6 +99,7 @@ type BackendProject = {
   graphEnabled?: boolean;
   graphPngDataUrl?: string;
   aiSummary?: string;
+  status?: ProjectStatus;
   creator?: { name?: string };
 };
 
@@ -104,14 +109,14 @@ type BackendFolder = {
   name: string;
   description?: string;
   projectId: string;
-  parentFolderId?: string | null;
+  parentFolderId?: string | { toString(): string } | null;
 };
 
 type BackendScenario = {
   id?: string;
   _id?: string;
   projectId: string;
-  parentFolderId?: string | null;
+  parentFolderId?: string | { toString(): string } | null;
   title: string;
   context?: string;
   equation?: string;
@@ -123,7 +128,12 @@ type BackendScenario = {
   summary?: string;
 };
 
-const getEntityId = (entity: { id?: string; _id?: string }) => entity.id ?? entity._id ?? "";
+const getEntityId = (entity: { id?: string; _id?: string | { toString(): string } }) => {
+  const rawId = entity.id ?? entity._id;
+  return rawId ? rawId.toString() : "";
+};
+
+const getOptionalId = (value?: string | { toString(): string } | null) => (value ? value.toString() : null);
 
 export function normalizeProject(project: BackendProject): ProjectDto {
   return {
@@ -136,6 +146,7 @@ export function normalizeProject(project: BackendProject): ProjectDto {
     graphEnabled: project.graphEnabled ?? false,
     graphPngDataUrl: project.graphPngDataUrl ?? "",
     summary: project.aiSummary ?? "",
+    status: project.status ?? "published",
     ownerName: project.creator?.name ?? project.creatorName
   };
 }
@@ -146,7 +157,7 @@ export function normalizeFolder(folder: BackendFolder, ownerId: string): FolderD
     name: folder.name,
     description: folder.description ?? "",
     projectId: folder.projectId,
-    parentId: folder.parentFolderId ?? null,
+    parentId: getOptionalId(folder.parentFolderId),
     ownerId
   };
 }
@@ -155,7 +166,7 @@ export function normalizeScenario(scenario: BackendScenario, ownerId: string): S
   return {
     id: getEntityId(scenario),
     projectId: scenario.projectId,
-    parentId: scenario.parentFolderId ?? null,
+    parentId: getOptionalId(scenario.parentFolderId),
     ownerId,
     name: scenario.title,
     content: scenario.context ?? "",

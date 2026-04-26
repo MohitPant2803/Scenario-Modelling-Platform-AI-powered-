@@ -16,7 +16,7 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      await api<{ id: string; name: string; email: string }>("/auth/register", {
+      await api<{ id: string; name: string; email: string; role: "super_admin" | "admin" | "creator" }>("/auth/register", {
         method: "POST",
         body: JSON.stringify({ name, email, password })
       });

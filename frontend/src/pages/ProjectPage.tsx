@@ -37,11 +37,11 @@ export default function ProjectPage() {
     }
   }, [location.pathname, location.state, navigate]);
 
-  const canEdit = Boolean(me && project && me.id === project.ownerId);
+  const canEdit = Boolean(me && project && (me.role === "super_admin" || me.role === "admin" || me.id === project.ownerId));
 
   const requireOwner = () => {
     if (!canEdit) {
-      window.alert("Only the project owner can modify this hierarchy.");
+      window.alert("Only the project owner, an admin, or the super admin can modify this hierarchy.");
       return false;
     }
     return true;

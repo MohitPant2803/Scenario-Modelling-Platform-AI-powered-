@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
 
+export const USER_ROLES = ["super_admin", "admin", "creator"] as const;
+export const PROJECT_STATUSES = ["draft", "published"] as const;
+
 const variableSchema = new mongoose.Schema(
   {
     symbol: { type: String, default: "" },
@@ -29,7 +32,8 @@ const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, index: true },
-    passwordHash: { type: String, required: true }
+    passwordHash: { type: String, required: true },
+    role: { type: String, enum: USER_ROLES, default: "creator", index: true }
   },
   { timestamps: true }
 );
@@ -43,6 +47,7 @@ const projectSchema = new mongoose.Schema(
     graphEnabled: { type: Boolean, default: false },
     graphPngDataUrl: { type: String, default: "" },
     aiSummary: { type: String, default: "" },
+    status: { type: String, enum: PROJECT_STATUSES, default: "draft", index: true },
     creatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }
   },
   { timestamps: true }

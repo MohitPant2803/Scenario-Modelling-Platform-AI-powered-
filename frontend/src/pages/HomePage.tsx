@@ -1,34 +1,60 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import Button from "../components/common/Button";
 import { api } from "../lib/api";
+import type { AuthUser } from "../types";
 
 type ProjectTitleOnly = {
   id: string;
   title: string;
   creatorName?: string;
-};
-
-type AuthUser = {
-  id: string;
-  name: string;
-  email: string;
+  status?: "draft" | "published";
+  creatorId?: string;
+  description?: string;
 };
 
 export default function HomePage() {
   const [projects, setProjects] = useState<ProjectTitleOnly[]>([]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [search, setSearch] = useState("");
+  const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
+
+  const loadProjects = () => {
+    api<ProjectTitleOnly[]>("/projects").then(setProjects).catch(console.error);
+  };
 
   useEffect(() => {
-    api<ProjectTitleOnly[]>("/projects").then(setProjects).catch(console.error);
     api<AuthUser | null>("/auth/me").then(setUser).catch(() => setUser(null));
+    loadProjects();
   }, []);
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim();
     if (!term) return projects;
-    return projects.filter((p) => p.title.toLowerCase().includes(term));
+    const titleMatches = projects.filter((project) => project.title.toLowerCase().includes(term));
+    const creatorMatches = projects.filter(
+      (project) =>
+        !project.title.toLowerCase().includes(term) &&
+        (project.creatorName ?? "").toLowerCase().includes(term)
+    );
+
+    return [...titleMatches, ...creatorMatches];
   }, [projects, search]);
+
+  const toggleStatus = async (project: ProjectTitleOnly) => {
+    setBusyProjectId(project.id);
+    try {
+      await api(`/projects/${project.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: project.status === "published" ? "draft" : "published" })
+      });
+      loadProjects();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to update project status");
+    } finally {
+      setBusyProjectId(null);
+    }
+  };
 
   return (
     <main className="stack">
@@ -41,8 +67,8 @@ export default function HomePage() {
               Open your workspace, organize project content, and continue the analysis you were working on.
             </p>
             <div>
-              <Link to="/my-projects" className="inline-action-link">
-                Go to my projects -&gt;
+              <Link to={user.role === "super_admin" ? "/access-control" : "/my-projects"} className="inline-action-link">
+                {user.role === "super_admin" ? "Open access ->" : "Go to my projects ->"}
               </Link>
             </div>
           </div>
@@ -59,8 +85,8 @@ export default function HomePage() {
       )}
 
       <div className="stack" style={{ gap: 6 }}>
-        <h2 style={{ margin: 0, fontSize: "1.45rem" }}>Projects</h2>
-        <p style={{ margin: 0, fontSize: 15, color: "#6b7280" }}>Open a project to view its scenario details.</p>
+        <h2 style={{ margin: 0, fontSize: "1.45rem" }}>Published projects</h2>
+        <p style={{ margin: 0, fontSize: 15, color: "#6b7280" }}>Open a published project to view its scenario details.</p>
       </div>
 
       <input
@@ -73,13 +99,27 @@ export default function HomePage() {
       <ul className="project-list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
         {filtered.map((project) => (
           <li key={project.id}>
-            <Link to={`/projects/${project.id}`} className="project-card">
-              <div className="project-card-header">
-                <strong className="project-card-title">{project.title}</strong>
-                <span className="project-card-arrow">Open</span>
-              </div>
-              <span className="project-card-meta">By {project.creatorName || "Unknown"}</span>
-            </Link>
+            <div className="project-card">
+              <Link to={`/projects/${project.id}`} style={{ color: "inherit", textDecoration: "none", display: "block" }}>
+                <div className="project-card-header">
+                  <strong className="project-card-title">{project.title}</strong>
+                  <span className="project-card-arrow">Open</span>
+                </div>
+                <span className="project-card-meta">By {project.creatorName || "Unknown"}</span>
+              </Link>
+              {user && (user.role === "admin" || user.role === "super_admin") ? (
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  <Button
+                    type="button"
+                    variant={project.status === "published" ? "secondary" : "primary"}
+                    disabled={busyProjectId === project.id}
+                    onClick={() => void toggleStatus(project)}
+                  >
+                    {project.status === "published" ? "Keep Draft" : "Publish"}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

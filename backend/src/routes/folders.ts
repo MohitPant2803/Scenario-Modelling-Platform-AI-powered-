@@ -1,7 +1,8 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { z } from "zod";
-import { ProjectModel, FolderModel, ScenarioModel } from "../lib/models.js";
+import { canManageProject, canReadProject, getCurrentUser } from "../lib/access.js";
+import { FolderModel, ProjectModel, ScenarioModel } from "../lib/models.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
 const foldersRouter = Router();
@@ -35,47 +36,58 @@ async function wouldCreateCycle(folderId: string, parentFolderId: string | null)
   return false;
 }
 
-// Get folder tree for a project
 foldersRouter.get("/project/:projectId/tree", async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.projectId)) return res.status(400).json({ error: "Invalid project id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  const project = await ProjectModel.findById(req.params.projectId).select({ creatorId: 1, status: 1 }).lean();
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  if (!canReadProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
+
   try {
-    // Get all folders and scenarios for this project
     const folders = await FolderModel.find({ projectId: req.params.projectId }).lean();
     const scenarios = await ScenarioModel.find({ projectId: req.params.projectId, parentFolderId: null }).lean();
-    
+
     res.json({ folders, scenarios });
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch folder tree" });
   }
 });
 
-// Get children of a folder (both subfolders and scenarios)
 foldersRouter.get("/:folderId/contents", async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.folderId)) return res.status(400).json({ error: "Invalid folder id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  const folder = await FolderModel.findById(req.params.folderId);
+  if (!folder) return res.status(404).json({ error: "Folder not found" });
+
+  const project = await ProjectModel.findById(folder.projectId).select({ creatorId: 1, status: 1 }).lean();
+  if (!project) return res.status(404).json({ error: "Project not found" });
+  if (!canReadProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
+
   try {
     const subfolders = await FolderModel.find({ parentFolderId: req.params.folderId }).lean();
     const scenarios = await ScenarioModel.find({ parentFolderId: req.params.folderId }).lean();
-    
+
     res.json({ folders: subfolders, scenarios });
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to fetch folder contents" });
   }
 });
 
-// Create a new folder
 foldersRouter.post("/project/:projectId", requireAuth, async (req, res) => {
   const parsed = createFolderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   if (!mongoose.isValidObjectId(req.params.projectId)) return res.status(400).json({ error: "Invalid project id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const project = await ProjectModel.findById(req.params.projectId);
   if (!project) return res.status(404).json({ error: "Project not found" });
-  if (project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
-  // Validate parent folder if provided
   if (parsed.data.parentFolderId) {
     if (!mongoose.isValidObjectId(parsed.data.parentFolderId)) return res.status(400).json({ error: "Invalid parent folder id" });
     const parentFolder = await FolderModel.findById(parsed.data.parentFolderId);
@@ -92,29 +104,28 @@ foldersRouter.post("/project/:projectId", requireAuth, async (req, res) => {
       parentFolderId: parsed.data.parentFolderId || null
     });
     res.status(201).json(folder);
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to create folder" });
   }
 });
 
-// Update a folder
 foldersRouter.patch("/:id", requireAuth, async (req, res) => {
   const parsed = updateFolderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid folder id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const folder = await FolderModel.findById(req.params.id);
   if (!folder) return res.status(404).json({ error: "Folder not found" });
 
   const project = await ProjectModel.findById(folder.projectId);
-  if (!project || project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!project || !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
-  // Validate new parent folder if provided
   if (parsed.data.parentFolderId && parsed.data.parentFolderId !== null) {
     if (!mongoose.isValidObjectId(parsed.data.parentFolderId)) return res.status(400).json({ error: "Invalid parent folder id" });
-    
-    // Check for circular reference
     if (parsed.data.parentFolderId === folder._id.toString()) {
       return res.status(400).json({ error: "Cannot move folder to itself" });
     }
@@ -133,50 +144,47 @@ foldersRouter.patch("/:id", requireAuth, async (req, res) => {
     const updated = await FolderModel.findByIdAndUpdate(
       req.params.id,
       {
-        ...(parsed.data.name && { name: parsed.data.name }),
-        ...(parsed.data.description && { description: parsed.data.description }),
-        ...(parsed.data.parentFolderId !== undefined && { parentFolderId: parsed.data.parentFolderId || null })
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+        ...(parsed.data.parentFolderId !== undefined ? { parentFolderId: parsed.data.parentFolderId || null } : {})
       },
       { new: true }
     );
     res.json(updated);
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to update folder" });
   }
 });
 
-// Delete a folder and all its contents (recursive)
 foldersRouter.delete("/:id", requireAuth, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid folder id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const folder = await FolderModel.findById(req.params.id);
   if (!folder) return res.status(404).json({ error: "Folder not found" });
 
   const project = await ProjectModel.findById(folder.projectId);
-  if (!project || project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!project || !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
   try {
-    // Recursive delete: remove all subfolders and scenarios
     const deleteFolderRecursive = async (folderId: string) => {
-      // Get all subfolders
       const subfolders = await FolderModel.find({ parentFolderId: folderId });
       for (const subfolder of subfolders) {
         await deleteFolderRecursive(subfolder._id.toString());
       }
-      // Delete all scenarios in this folder
       await ScenarioModel.deleteMany({ parentFolderId: folderId });
-      // Delete the folder itself
       await FolderModel.findByIdAndDelete(folderId);
     };
 
     await deleteFolderRecursive(req.params.id);
     res.json({ ok: true });
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to delete folder" });
   }
 });
 
-// Move a folder to a different parent
 foldersRouter.patch("/:id/move", requireAuth, async (req, res) => {
   const moveSchema = z.object({
     parentFolderId: z.string().nullable()
@@ -186,19 +194,20 @@ foldersRouter.patch("/:id/move", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: "Invalid folder id" });
-  
+
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) return res.status(401).json({ error: "Authentication required" });
+
   const folder = await FolderModel.findById(req.params.id);
   if (!folder) return res.status(404).json({ error: "Folder not found" });
 
   const project = await ProjectModel.findById(folder.projectId);
-  if (!project || project.creatorId.toString() !== req.session.userId) return res.status(403).json({ error: "Forbidden" });
+  if (!project || !canManageProject(project, currentUser)) return res.status(403).json({ error: "Forbidden" });
 
-  // Check for circular reference
   if (parsed.data.parentFolderId === folder._id.toString()) {
     return res.status(400).json({ error: "Cannot move folder to itself" });
   }
 
-  // Validate new parent folder if provided
   if (parsed.data.parentFolderId) {
     if (!mongoose.isValidObjectId(parsed.data.parentFolderId)) return res.status(400).json({ error: "Invalid parent folder id" });
     const parentFolder = await FolderModel.findById(parsed.data.parentFolderId);
@@ -218,7 +227,7 @@ foldersRouter.patch("/:id/move", requireAuth, async (req, res) => {
       { new: true }
     );
     res.json(updated);
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: "Failed to move folder" });
   }
 });
