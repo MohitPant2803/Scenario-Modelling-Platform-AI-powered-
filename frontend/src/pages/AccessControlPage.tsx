@@ -8,6 +8,7 @@ import type { AuthUser, UserRole } from "../types";
 type ManagedUser = {
   id: string;
   name: string;
+  username: string;
   email: string;
   role: UserRole;
 };
@@ -89,6 +90,25 @@ export default function AccessControlPage() {
     }
   };
 
+  const deleteUser = async (userId: string, name: string) => {
+    const confirmed = window.confirm(`Delete ${name}'s full account and all of their projects, folders, scenarios, and chats?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyUserId(userId);
+    setError(null);
+
+    try {
+      await api<{ ok: boolean }>(`/auth/users/${userId}`, { method: "DELETE" });
+      await reloadUsers();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete user");
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
   if (loading) {
     return <main className="stack"><div className="card">Loading access controls...</div></main>;
   }
@@ -108,7 +128,7 @@ export default function AccessControlPage() {
           <h1 style={{ margin: 0 }}>{me.role === "super_admin" ? "Access" : "Creators Directory"}</h1>
           <p style={{ margin: "8px 0 0", color: "#64748b" }}>
             {me.role === "super_admin"
-              ? "Grant admin access, return people to creator access, and review every account."
+              ? "Grant admin access, return people to creator access, review every account, and delete accounts when needed."
               : "View all creator accounts. Admins can edit or delete any document, but cannot change roles."}
           </p>
         </div>
@@ -121,7 +141,7 @@ export default function AccessControlPage() {
             <Card
               key={user.id}
               title={user.name}
-              caption={user.email}
+              caption={`@${user.username} | ${user.email}`}
               meta={user.role}
               subtitle="Open this user's project list and manage their access from here."
               onClick={() => navigate(`/my-projects/${user.id}`)}
@@ -137,6 +157,9 @@ export default function AccessControlPage() {
                   <Button type="button" variant="danger" disabled={busyUserId === user.id || user.role === "creator" || user.role === "super_admin"} onClick={() => void demoteUser(user.id)}>
                     Remove Admin Access
                   </Button>
+                  <Button type="button" variant="danger" disabled={busyUserId === user.id || user.role === "super_admin"} onClick={() => void deleteUser(user.id, user.name)}>
+                    Delete Account
+                  </Button>
                 </div>
               }
             />
@@ -151,7 +174,7 @@ export default function AccessControlPage() {
               <Card
                 key={creator.id}
                 title={creator.name}
-                caption={creator.email}
+                caption={`@${creator.username} | ${creator.email}`}
                 meta="creator"
                 subtitle="Open this creator's project list to manage their documents."
                 onClick={() => navigate(`/my-projects/${creator.id}`)}

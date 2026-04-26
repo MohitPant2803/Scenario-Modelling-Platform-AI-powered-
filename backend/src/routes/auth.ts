@@ -4,19 +4,23 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import {
   getCurrentUser,
-  isAdmin,
   isProtectedSuperAdminUser,
   isSuperAdmin,
   resolveUserRole,
   type UserRole
 } from "../lib/access.js";
-import { USER_ROLES, UserModel } from "../lib/models.js";
+import { ChatMessageModel, FolderModel, ProjectModel, ScenarioModel, USER_ROLES, UserModel } from "../lib/models.js";
 import { requireRole } from "../middleware/requireRole.js";
 
 const authRouter = Router();
 
 const registerSchema = z.object({
   name: z.string().min(2),
+  username: z
+    .string()
+    .min(3)
+    .max(30)
+    .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
   email: z.string().email(),
   password: z.string().min(8)
 });
@@ -30,10 +34,11 @@ const promoteSchema = z.object({
   role: z.enum(["admin", "creator"]).default("admin")
 });
 
-function serializeUser(user: { _id: mongoose.Types.ObjectId; name: string; email: string; role?: string | null }) {
+function serializeUser(user: { _id: mongoose.Types.ObjectId; name: string; username: string; email: string; role?: string | null }) {
   return {
     id: user._id.toString(),
     name: user.name,
+    username: user.username,
     email: user.email,
     role: resolveUserRole(user.role as UserRole | "writer" | "user" | undefined, user._id.toString())
   };
@@ -45,19 +50,31 @@ authRouter.post("/register", async (req, res) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const { name, email, password } = parsed.data;
+  const { name, username, email, password } = parsed.data;
   const existing = await UserModel.findOne({ email });
   if (existing) {
     return res.status(409).json({ error: "Email already in use" });
   }
 
+  const normalizedUsername = username.trim().toLowerCase();
+  const existingUsername = await UserModel.findOne({ username: normalizedUsername });
+  if (existingUsername) {
+    return res.status(409).json({ error: "Username already in use. Please use another username." });
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await UserModel.create({ name, email, passwordHash, role: "creator" });
+  const user = await UserModel.create({ name, username: normalizedUsername, email, passwordHash, role: "creator" });
   const resolvedRole = resolveUserRole(user.role, user._id.toString());
 
   req.session.userId = user._id.toString();
   req.session.userRole = resolvedRole;
-  return res.status(201).json({ id: user._id.toString(), name: user.name, email: user.email, role: resolvedRole });
+  return res.status(201).json({
+    id: user._id.toString(),
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    role: resolvedRole
+  });
 });
 
 authRouter.post("/login", async (req, res) => {
@@ -79,7 +96,7 @@ authRouter.post("/login", async (req, res) => {
   const resolvedRole = resolveUserRole(user.role, user._id.toString());
   req.session.userId = user._id.toString();
   req.session.userRole = resolvedRole;
-  return res.json({ id: user._id.toString(), name: user.name, email: user.email, role: resolvedRole });
+  return res.json({ id: user._id.toString(), name: user.name, username: user.username, email: user.email, role: resolvedRole });
 });
 
 authRouter.post("/logout", (req, res) => {
@@ -93,19 +110,19 @@ authRouter.get("/me", async (req, res) => {
     return res.json(null);
   }
 
-  const user = await UserModel.findById(req.session.userId).select({ name: 1, email: 1, role: 1 });
+  const user = await UserModel.findById(req.session.userId).select({ name: 1, username: 1, email: 1, role: 1 });
   if (!user) return res.json(null);
 
   return res.json(serializeUser(user));
 });
 
 authRouter.get("/users", requireRole("super_admin"), async (_req, res) => {
-  const users = await UserModel.find().sort({ createdAt: 1 }).select({ name: 1, email: 1, role: 1 });
+  const users = await UserModel.find().sort({ createdAt: 1 }).select({ name: 1, username: 1, email: 1, role: 1 });
   return res.json(users.map(serializeUser));
 });
 
 authRouter.get("/creators", requireRole("admin", "super_admin"), async (_req, res) => {
-  const users = await UserModel.find().sort({ createdAt: 1 }).select({ name: 1, email: 1, role: 1 });
+  const users = await UserModel.find().sort({ createdAt: 1 }).select({ name: 1, username: 1, email: 1, role: 1 });
   return res.json(users.map(serializeUser).filter((user) => user.role === "creator"));
 });
 
@@ -182,6 +199,41 @@ authRouter.patch("/users/:id/role", requireRole("super_admin"), async (req, res)
   await targetUser.save();
 
   return res.json(serializeUser(targetUser));
+});
+
+authRouter.delete("/users/:id", requireRole("super_admin"), async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(400).json({ error: "Invalid user id" });
+  }
+
+  const targetUser = await UserModel.findById(req.params.id);
+  if (!targetUser) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  if (isProtectedSuperAdminUser(targetUser._id.toString())) {
+    return res.status(400).json({ error: "The configured super admin user cannot be deleted here." });
+  }
+
+  const ownedProjects = await ProjectModel.find({ creatorId: targetUser._id }).select({ _id: 1 }).lean();
+  const projectIds = ownedProjects.map((project) => project._id);
+
+  if (projectIds.length > 0) {
+    const ownedScenarios = await ScenarioModel.find({ projectId: { $in: projectIds } }).select({ _id: 1 }).lean();
+    const scenarioIds = ownedScenarios.map((scenario) => scenario._id);
+
+    if (scenarioIds.length > 0) {
+      await ChatMessageModel.deleteMany({ scenarioId: { $in: scenarioIds } });
+    }
+
+    await FolderModel.deleteMany({ projectId: { $in: projectIds } });
+    await ScenarioModel.deleteMany({ projectId: { $in: projectIds } });
+    await ProjectModel.deleteMany({ _id: { $in: projectIds } });
+  }
+
+  await UserModel.findByIdAndDelete(targetUser._id);
+
+  return res.json({ ok: true });
 });
 
 export default authRouter;

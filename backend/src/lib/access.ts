@@ -8,6 +8,7 @@ export type ProjectStatus = "draft" | "published";
 export type CurrentUser = {
   _id: mongoose.Types.ObjectId;
   name: string;
+  username: string;
   email: string;
   role: UserRole;
 };
@@ -64,6 +65,7 @@ export async function getCurrentUser(req: Request) {
   const user = await UserModel.findById(req.session.userId).select({ name: 1, email: 1, role: 1 }).lean<{
     _id: mongoose.Types.ObjectId;
     name: string;
+    username: string;
     email: string;
     role?: LegacyUserRole;
   } | null>();

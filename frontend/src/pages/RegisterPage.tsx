@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -16,9 +17,9 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      await api<{ id: string; name: string; email: string; role: "super_admin" | "admin" | "creator" }>("/auth/register", {
+      await api<{ id: string; name: string; username: string; email: string; role: "super_admin" | "admin" | "creator" }>("/auth/register", {
         method: "POST",
-        body: JSON.stringify({ name, email, password })
+        body: JSON.stringify({ name, username, email, password })
       });
       navigate("/");
     } catch (err) {
@@ -53,6 +54,21 @@ export default function RegisterPage() {
         </label>
 
         <label className="stack auth-field">
+          <span>Username</span>
+          <input
+            className="field-input"
+            type="text"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            minLength={3}
+            maxLength={30}
+            pattern="[A-Za-z0-9_]+"
+          />
+        </label>
+
+        <label className="stack auth-field">
           <span>Email</span>
           <input
             className="field-input"
@@ -77,7 +93,7 @@ export default function RegisterPage() {
           />
         </label>
 
-        <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Use at least 8 characters.</p>
+        <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Use at least 8 characters. Usernames can include letters, numbers, and underscores.</p>
 
         {error ? <p className="auth-error">{error}</p> : null}
 

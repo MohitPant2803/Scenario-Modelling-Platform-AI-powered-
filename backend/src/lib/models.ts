@@ -31,6 +31,7 @@ const chartConfigSchema = new mongoose.Schema(
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
+    username: { type: String, required: true, unique: true, index: true, lowercase: true, trim: true },
     email: { type: String, required: true, unique: true, index: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: USER_ROLES, default: "creator", index: true }

@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await api<{ id: string; name: string; email: string; role: "super_admin" | "admin" | "creator" }>("/auth/login", {
+      await api<{ id: string; name: string; username: string; email: string; role: "super_admin" | "admin" | "creator" }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
